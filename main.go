@@ -2,59 +2,70 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"github.com/micmonay/keybd_event"
 	"golang.design/x/hotkey"
 	"golang.design/x/mainthread"
 	"log"
+	"os"
+	"runtime"
+	"strings"
 	"time"
 )
 
+var keyInterval time.Duration = 100
+
 func main() {
-	//kb, _ := keybd_event.NewKeyBonding()
+	kb, _ := keybd_event.NewKeyBonding()
 	// For linux, it is very important to wait 2 seconds
-	//if runtime.GOOS == "linux" {
-	//	time.Sleep(2 * time.Second)
-	//}
+	if runtime.GOOS == "linux" {
+		time.Sleep(2 * time.Second)
+	}
+	file, err := os.ReadFile("input.txt")
+	if err != nil {
+		log.Fatalf("read input.txt fail %v", err)
+	}
+	lines := strings.Split(string(file), "\n")
+	ctx := new(context.Context)
+	index := -1
 	mainthread.Init(func() {
 		//Register a desired hotkey.
-		hk, err := hotkey.Register([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModCmd}, hotkey.Key1)
+		typeNext, err := hotkey.Register([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModCmd}, hotkey.KeyN)
 		if err != nil {
 			panic("hotkey registration failed")
 		}
-		ctx := new(context.Context)
-		// Start listen hotkey event whenever you feel it is ready.
-		triggered := hk.Listen(*ctx)
-
-		hk2, err2 := hotkey.Register([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModCmd}, hotkey.Key2)
+		typePrev, err2 := hotkey.Register([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModCmd}, hotkey.KeyP)
 		if err2 != nil {
 			panic("hotkey registration failed")
 		}
-		// Start listen hotkey event whenever you feel it is ready.
-		triggered2 := hk2.Listen(*ctx)
-		for range triggered2 {
-			fmt.Println("2")
+		typeRepeat, err3 := hotkey.Register([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModCmd}, hotkey.KeyR)
+		if err3 != nil {
+			panic("hotkey registration failed")
 		}
-		for range triggered {
-			fmt.Println("1")
+		nextC := typeNext.Listen(*ctx)
+		prevC := typePrev.Listen(*ctx)
+		repeatC := typeRepeat.Listen(*ctx)
+		for {
+			select {
+			case <-nextC:
+				time.Sleep(keyInterval * time.Millisecond * 2)
+				index = (index + 1) % len(lines)
+				stringToKey(&kb, lines[index]+"\n")
+			case <-prevC:
+				time.Sleep(keyInterval * time.Millisecond * 2)
+				index = (len(lines) + index - 1) % len(lines)
+				stringToKey(&kb, lines[index]+"\n")
+			case <-repeatC:
+				time.Sleep(keyInterval * time.Millisecond * 2)
+				stringToKey(&kb, lines[index]+"\n")
+			}
 		}
-
-		//for x := range triggered2 {
-		//	log.Println(x)
-		//	time.Sleep(time.Millisecond * 200)
-		//	stringToKey(&kb, "gget -r fatedier/frp -n darwin_amd64\n")
-		//}
-		//for x := range triggered {
-		//	log.Println(x)
-		//	time.Sleep(time.Millisecond * 200)
-		//	stringToKey(&kb, "gget -r fatedier/frp\n")
-		//}
 	})
-
 }
 
 func stringToKey(kb *keybd_event.KeyBonding, s string) {
 	for _, r := range s {
+		//kb.HasSHIFT(false)
+		kb.Clear()
 		switch r {
 		case ' ':
 			kb.SetKeys(keybd_event.VK_SPACE)
@@ -308,9 +319,7 @@ func stringToKey(kb *keybd_event.KeyBonding, s string) {
 		default:
 			log.Printf("unknown: [ %c ]\n", r)
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(keyInterval * time.Millisecond)
 		kb.Press()
-		kb.Release()
-		kb.HasSHIFT(false)
 	}
 }
